@@ -1,60 +1,44 @@
-# Disable unnecessary services for a dedicated AMP game server
-# Use with care. Requires Administrator privileges.
+# Run as Administrator!
+Write-Host "Starting VM optimization script..." -ForegroundColor Cyan
 
-# List of services to disable
-$servicesToDisable = @(
-    "WSearch",            # Windows Search
-    "Spooler",            # Print Spooler
-    "WaaSMedicSvc",       # Windows Update Medic Service
-    "XblGameSave",        # Xbox Live Game Save
-    "XboxNetApiSvc",      # Xbox Live Networking Service
-    "XboxGipSvc",         # Xbox Accessory Management Service
-    "XblAuthManager",     # Xbox Live Auth Manager
-    "Fax",                # Fax
-    "bthserv",            # Bluetooth Support Service
-    "WlanSvc",            # WLAN AutoConfig
-    "RemoteRegistry",     # Remote Registry
-    "SysMain",            # Superfetch / SysMain
-    "TabletInputService", # Tablet PC Input Service
-    "WerSvc",             # Windows Error Reporting Service
-    "DoSvc",              # Delivery Optimization
-    "CscService",         # Offline Files
-    "RetailDemo"          # Retail Demo Service
-)
-
-# Function to stop and disable a service safely
+# Function to stop and disable a Windows service by name
 function Disable-ServiceSafe {
-    param (
-        [string]$serviceName
-    )
-    $svc = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-    if ($null -ne $svc) {
+    param([string]$svcName)
+    $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+    if ($svc) {
         if ($svc.Status -eq 'Running') {
-            Write-Host "Stopping service: $serviceName"
-            Stop-Service -Name $serviceName -Force
+            Write-Host "Stopping $svcName"
+            Stop-Service -Name $svcName -Force
         }
-        Write-Host "Disabling service: $serviceName"
-        Set-Service -Name $serviceName -StartupType Disabled
+        Write-Host "Disabling $svcName"
+        Set-Service -Name $svcName -StartupType Disabled
     } else {
-        Write-Host "Service not found: $serviceName"
+        Write-Host "$svcName not found"
     }
 }
 
-# Iterate and disable each service
+# List of services to aggressively disable
+$servicesToDisable = @(
+    "WSearch", "Spooler", "WaaSMedicSvc", "Fax", "bthserv", "WlanSvc",
+    "RemoteRegistry", "SysMain", "TabletInputService", "WerSvc", "DoSvc",
+    "CscService", "RetailDemo", "diagnosticshub.standardcollector.service",
+    "DiagTrack", "dmwappushservice", "MapsBroker", "PcaSvc", "PrintNotify",
+    "TrkWks", "XblGameSave", "XboxNetApiSvc", "XboxGipSvc", "XblAuthManager",
+    "lfsvc", "PhoneSvc", "shpamsvc", "wisvc"
+)
+
 foreach ($svcName in $servicesToDisable) {
-    Disable-ServiceSafe -serviceName $svcName
+    Disable-ServiceSafe -svcName $svcName
 }
 
-# Special handling: Disable Xbox services by display name (covers future renames)
+# Also target by display name for Xbox-related services
 $displayNames = @(
-    "Xbox Live Auth Manager",
-    "Xbox Live Game Save",
-    "Xbox Accessory Management Service",
-    "Xbox Live Networking Service"
+    "Xbox Live Auth Manager", "Xbox Live Game Save",
+    "Xbox Accessory Management Service", "Xbox Live Networking Service"
 )
 foreach ($displayName in $displayNames) {
     $svc = Get-Service | Where-Object { $_.DisplayName -eq $displayName }
-    if ($null -ne $svc) {
+    if ($svc) {
         if ($svc.Status -eq 'Running') {
             Write-Host "Stopping service (DisplayName): $displayName"
             Stop-Service -Name $svc.Name -Force
@@ -64,23 +48,42 @@ foreach ($displayName in $displayNames) {
     }
 }
 
-Write-Host "All unnecessary services processed."
-$regPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization"
-if (-not (Test-Path $regPath)) {
-    New-Item -Path $regPath -Force | Out-Null
+# Disable Defender via Registry
+$defenderReg = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"
+if (-not (Test-Path $defenderReg)) {
+    New-Item -Path $defenderReg -Force | Out-Null
 }
-New-ItemProperty -Path $regPath -Name "DODownloadMode" -PropertyType DWord -Value 0 -Force
+New-ItemProperty -Path $defenderReg -Name "DisableAntiSpyware" -PropertyType DWord -Value 1 -Force
 
-# Ensure the Defender registry key exists, then set DisableAntiSpyware to 1
-$regPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"
-if (-not (Test-Path $regPath)) {
-    New-Item -Path $regPath -Force | Out-Null
-}
-New-ItemProperty -Path $regPath -Name "DisableAntiSpyware" -PropertyType DWord -Value 1 -Force
-
-# Also disable Real-Time Protection
-$rtpPath = "$regPath\Real-Time Protection"
+$rtpPath = "$defenderReg\Real-Time Protection"
 if (-not (Test-Path $rtpPath)) {
     New-Item -Path $rtpPath -Force | Out-Null
 }
 New-ItemProperty -Path $rtpPath -Name "DisableRealtimeMonitoring" -PropertyType DWord -Value 1 -Force
+
+# Disable Delivery Optimization (DoSvc) via Registry
+$doReg = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization"
+if (-not (Test-Path $doReg)) {
+    New-Item -Path $doReg -Force | Out-Null
+}
+New-ItemProperty -Path $doReg -Name "DODownloadMode" -PropertyType DWord -Value 0 -Force
+
+# Disable Windows Error Reporting via Registry
+$werReg = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting"
+if (-not (Test-Path $werReg)) {
+    New-Item -Path $werReg -Force | Out-Null
+}
+New-ItemProperty -Path $werReg -Name "Disabled" -PropertyType DWord -Value 1 -Force
+
+# Disable Hibernation (saves disk space on VMs)
+Write-Host "Disabling hibernation"
+powercfg -h off
+
+# Set power plan to high performance
+Write-Host "Setting power plan to High performance"
+$guid = (powercfg /L | Select-String -Pattern "High performance" | ForEach-Object { $_.ToString().Split()[3] })
+if ($guid) {
+    powercfg /S $guid
+}
+
+Write-Host "Optimization complete. Reboot for all changes to take effect." -ForegroundColor Green
