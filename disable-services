@@ -70,3 +70,17 @@ if (-not (Test-Path $regPath)) {
     New-Item -Path $regPath -Force | Out-Null
 }
 New-ItemProperty -Path $regPath -Name "DODownloadMode" -PropertyType DWord -Value 0 -Force
+
+# Ensure the Defender registry key exists, then set DisableAntiSpyware to 1
+$regPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"
+if (-not (Test-Path $regPath)) {
+    New-Item -Path $regPath -Force | Out-Null
+}
+New-ItemProperty -Path $regPath -Name "DisableAntiSpyware" -PropertyType DWord -Value 1 -Force
+
+# Also disable Real-Time Protection
+$rtpPath = "$regPath\Real-Time Protection"
+if (-not (Test-Path $rtpPath)) {
+    New-Item -Path $rtpPath -Force | Out-Null
+}
+New-ItemProperty -Path $rtpPath -Name "DisableRealtimeMonitoring" -PropertyType DWord -Value 1 -Force
