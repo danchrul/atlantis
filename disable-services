@@ -65,3 +65,4 @@ foreach ($displayName in $displayNames) {
 }
 
 Write-Host "All unnecessary services processed."
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" -Name "DODownloadMode" -PropertyType DWord -Value 0 -Force
