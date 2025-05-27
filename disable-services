@@ -86,4 +86,31 @@ if ($guid) {
     powercfg /S $guid
 }
 
+# Block Edge background tasks via registry
+$edgeBgKey = "HKLM:\SOFTWARE\Policies\Microsoft\MicrosoftEdge\Main"
+if (-not (Test-Path $edgeBgKey)) { New-Item -Path $edgeBgKey -Force | Out-Null }
+New-ItemProperty -Path $edgeBgKey -Name "AllowPrelaunch" -PropertyType DWord -Value 0 -Force
+New-ItemProperty -Path $edgeBgKey -Name "AllowTabPreloading" -PropertyType DWord -Value 0 -Force
+
+$edgeChromiumKey = "HKLM:\SOFTWARE\Policies\Microsoft\Edge"
+if (-not (Test-Path $edgeChromiumKey)) { New-Item -Path $edgeChromiumKey -Force | Out-Null }
+New-ItemProperty -Path $edgeChromiumKey -Name "BackgroundModeEnabled" -PropertyType DWord -Value 0 -Force
+New-ItemProperty -Path $edgeChromiumKey -Name "StartupBoostEnabled" -PropertyType DWord -Value 0 -Force
+
+# Disable Edge Update and background tasks
+Get-ScheduledTask | Where-Object {$_.TaskName -like "*Edge*"} | Disable-ScheduledTask
+
+# Registry to kill Defender and real-time monitoring
+$defenderReg = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"
+if (-not (Test-Path $defenderReg)) { New-Item -Path $defenderReg -Force | Out-Null }
+New-ItemProperty -Path $defenderReg -Name "DisableAntiSpyware" -PropertyType DWord -Value 1 -Force
+
+$rtpPath = "$defenderReg\Real-Time Protection"
+if (-not (Test-Path $rtpPath)) { New-Item -Path $rtpPath -Force | Out-Null }
+New-ItemProperty -Path $rtpPath -Name "DisableRealtimeMonitoring" -PropertyType DWord -Value 1 -Force
+
+# Kill running Defender processes (will not always succeed, but try)
+Get-Process MsMpEng -ErrorAction SilentlyContinue | Stop-Process -Force
+
+
 Write-Host "Optimization complete. Reboot for all changes to take effect." -ForegroundColor Green
